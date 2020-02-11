@@ -1,4 +1,4 @@
-module github.com/likexian/whois-go
+module github.com/lovelly/whois-go
 
 go 1.12
 
