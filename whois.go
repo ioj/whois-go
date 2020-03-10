@@ -20,6 +20,7 @@
 package whois
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -1105,13 +1106,26 @@ func License() string {
 
 // Whois do the whois query and returns whois info
 func Whois(domain string, servers ...string) (result string, err error) {
+	var cancel context.CancelFunc
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	return WhoisContext(ctx, domain, servers...)
+}
+
+// WhoisContext does the whois query and returns whois info
+func WhoisContext(ctx context.Context, domain string, servers ...string) (result string, err error) {
+	if ctx == nil {
+		return "", errors.New("nil context")
+	}
+
 	domain = strings.Trim(strings.TrimSpace(domain), ".")
 	if domain == "" {
 		err = fmt.Errorf("Domain is empty")
 		return
 	}
 
-	result, err = query(domain, servers...)
+	result, err = query(ctx, domain, servers...)
 	if err != nil {
 		return
 	}
@@ -1133,7 +1147,7 @@ func Whois(domain string, servers ...string) (result string, err error) {
 		return
 	}
 
-	tmpResult, err := query(domain, server)
+	tmpResult, err := query(ctx, domain, server)
 	if err != nil {
 		return
 	}
@@ -1144,7 +1158,7 @@ func Whois(domain string, servers ...string) (result string, err error) {
 }
 
 // query do the query
-func query(domain string, servers ...string) (result string, err error) {
+func query(ctx context.Context, domain string, servers ...string) (result string, err error) {
 	server := IANA_WHOIS_SERVER
 	if len(servers) == 0 || servers[0] == "" {
 		domains := strings.Split(domain, ".")
@@ -1167,14 +1181,19 @@ func query(domain string, servers ...string) (result string, err error) {
 		}
 	}
 
-	conn, e := net.DialTimeout("tcp", net.JoinHostPort(server, WHOIS_PORT), time.Second*30)
+	var d net.Dialer
+
+	conn, e := d.DialContext(ctx, "tcp", net.JoinHostPort(server, WHOIS_PORT))
 	if e != nil {
 		err = e
 		return
 	}
 
 	defer conn.Close()
-	_ = conn.SetReadDeadline(time.Now().Add(time.Second * 30))
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = conn.SetReadDeadline(deadline)
+	}
+
 	_, err = conn.Write([]byte(domain + "\r\n"))
 	if err != nil {
 		return
